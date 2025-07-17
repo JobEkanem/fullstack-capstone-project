@@ -1,19 +1,19 @@
 # Uncomment the required imports before adding the code
 
-# from django.shortcuts import render
-# from django.http import HttpResponseRedirect, HttpResponse
-# from django.contrib.auth.models import User
-# from django.shortcuts import get_object_or_404, render, redirect
-# from django.contrib.auth import logout
-# from django.contrib import messages
-# from datetime import datetime
+from django.shortcuts import render
+from django.http import HttpResponseRedirect, HttpResponse
+from django.contrib.auth.models import User
+from django.shortcuts import get_object_or_404, render, redirect
+from django.contrib.auth import logout
+from django.contrib import messages
+from datetime import datetime
 
 from django.http import JsonResponse
 from django.contrib.auth import login, authenticate
 import logging
 import json
 from django.views.decorators.csrf import csrf_exempt
-# from .populate import initiate
+from .populate import initiate
 
 
 # Get an instance of a logger
@@ -39,13 +39,87 @@ def login_user(request):
     return JsonResponse(data)
 
 # Create a `logout_request` view to handle sign out request
-# def logout_request(request):
+def logout_request(request):
+    logout(request) # Terminate user session
+    data = {"userName":""} # Return empty username
+    return JsonResponse(data)
 # ...
 
 # Create a `registration` view to handle sign up request
-# @csrf_exempt
-# def registration(request):
-# ...
+@csrf_exempt # Use with caution for production. Consider CSRF tokens for forms.
+def registration_request(request): # <<<--- IMPORTANT: RENAMED FROM 'registration' to 'registration_request'
+    context = {}
+
+    # Ensure it's a POST request for handling data
+    if request.method == 'POST':
+        try:
+            # Load JSON data from the request body
+            data = json.loads(request.body)
+            username = data.get('userName')
+            password = data.get('password')
+            first_name = data.get('firstName')
+            last_name = data.get('lastName')
+            email = data.get('email')
+
+            # Basic validation for required fields
+            if not all([username, password, first_name, last_name, email]):
+                return JsonResponse({"error": "Missing required fields."}, status=400)
+
+        except json.JSONDecodeError:
+            logger.error("Failed to decode JSON from request body.")
+            return JsonResponse({"error": "Invalid JSON in request body."}, status=400)
+        except Exception as e: # Catch other potential issues with data access
+            logger.error(f"Error processing request data: {e}")
+            return JsonResponse({"error": "Error processing request data."}, status=400)
+
+        username_exist = False
+        email_exist = False # This variable was declared but not used in your original code
+
+        try:
+            # Check if username already exists
+            User.objects.get(username=username)
+            username_exist = True
+            logger.debug(f"Username '{username}' already exists.")
+        except User.DoesNotExist:
+            logger.debug(f"Username '{username}' is a new user.")
+
+        try:
+            # Check if email already exists (important for preventing duplicate accounts by email)
+            User.objects.get(email=email)
+            email_exist = True
+            logger.debug(f"Email '{email}' already exists.")
+        except User.DoesNotExist:
+            logger.debug(f"Email '{email}' is new.")
+
+
+        if username_exist:
+            data = {"userName": username, "error": "Username Already Registered"}
+            return JsonResponse(data, status=400) # Use 400 for client error
+        elif email_exist: # Check for email existence if you want to prevent duplicate emails
+            data = {"userName": username, "error": "Email Already Registered"}
+            return JsonResponse(data, status=400) # Use 400 for client error
+        else:
+            try:
+                # Create user in auth_user table
+                user = User.objects.create_user(
+                    username=username,
+                    first_name=first_name,
+                    last_name=last_name,
+                    password=password,
+                    email=email
+                )
+                # Login the user and redirect to list page (if needed, or just confirm registration)
+                login(request, user) # Logs the user in immediately after creation
+
+                data = {"userName": username, "status": "Authenticated", "message": "Registration successful!"}
+                return JsonResponse(data, status=201) # Use 201 for Created
+            except Exception as e:
+                logger.error(f"Error during user creation or login: {e}")
+                data = {"error": "An internal server error occurred during registration."}
+                return JsonResponse(data, status=500) # Internal Server Error
+
+    else: # If not a POST request
+        return JsonResponse({"error": "Only POST requests are allowed for registration."}, status=405) # Method Not Allowed
 
 # # Update the `get_dealerships` view to render the index page with
 # a list of dealerships
@@ -62,4 +136,3 @@ def login_user(request):
 
 # Create a `add_review` view to submit a review
 # def add_review(request):
-# ...
